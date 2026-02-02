@@ -226,6 +226,7 @@ fn time_format(arg: &str) -> Result<TimeFormat, String> {
     match arg.to_uppercase().as_str() {
         "UTC" => Ok(TimeFormat::UTC),
         "LOCAL" => Ok(TimeFormat::Local),
+        "RELATIVE" => Ok(TimeFormat::Relative),
         _ => {
             let mut parsed = Parsed::new();
             match parse(&mut parsed, arg, StrftimeItems::new("%#z")) {
@@ -234,7 +235,7 @@ fn time_format(arg: &str) -> Result<TimeFormat, String> {
                     None => panic!("Should have been able to parse the offset"),
                 },
                 Err(_) => Err(String::from(
-                    "must be one of `Local`, `UTC` or an offset (-02:00)",
+                    "must be one of `Local`, `UTC`, `Relative`, or an offset (-02:00)",
                 )),
             }
         }

@@ -9,6 +9,7 @@ use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Header, TokenD
 use serde_derive::{Deserialize, Serialize};
 use serde_json::to_string_pretty;
 use std::collections::HashSet;
+use std::fmt::Write;
 use std::io;
 use std::path::PathBuf;
 use std::str::from_utf8;
@@ -175,6 +176,43 @@ pub fn decode_token(
     )
 }
 
+struct StringWriter<'a>(&'a mut String);
+impl std::io::Write for StringWriter<'_> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let s = str::from_utf8(buf)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        self.0.push_str(s);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn to_string_pretty_with_comments(payload: &Payload) -> String {
+    let mut res = String::from("{\n");
+    for (k, v) in &payload.0 {
+        res.push_str("  ");
+        serde_json::to_writer(StringWriter(&mut res), &k).unwrap();
+        res.push_str(": ");
+        let value_s = serde_json::to_string_pretty(&v).unwrap();
+        for (i, line) in value_s.lines().enumerate() {
+            if i != 0 {
+                res.push_str("  ");
+            }
+            res.push_str(line);
+        }
+        res.push(',');
+        if let Some(comment) = &v.comment {
+            write!(res, "  // {}", comment).unwrap();
+        }
+        res.push('\n');
+    }
+    res.push_str("}\n");
+    res
+}
+
 pub fn print_decoded_token(
     validated_token: JWTResult<TokenData<Payload>>,
     token_data: JWTResult<TokenData<Payload>>,
@@ -236,7 +274,7 @@ pub fn print_decoded_token(
             bunt::println!("\n{$bold}Token header\n------------{/$}");
             println!("{}\n", to_string_pretty(&token.header).unwrap());
             bunt::println!("{$bold}Token claims\n------------{/$}");
-            println!("{}", to_string_pretty(&token.claims).unwrap());
+            println!("{}", to_string_pretty_with_comments(&token.claims));
         }
         (_, _, Err(err)) => return Err(err),
     }

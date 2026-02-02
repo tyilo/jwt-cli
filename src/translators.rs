@@ -1,24 +1,67 @@
 use crate::utils::parse_duration_string;
 use chrono::{FixedOffset, Local, TimeZone, Utc};
 use clap::ValueEnum;
+use humantime::format_duration;
 use serde::ser::SerializeMap;
 use serde::{Serialize as CustomSerialize, Serializer};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{from_str, Value};
 use std::collections::BTreeMap;
+use std::fmt::Display;
 
 pub mod decode;
 pub mod encode;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct PayloadItem(pub String, pub Value);
+pub struct PayloadItem(pub String, pub ValueWithComment);
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(from = "Value", into = "Value")]
+pub struct ValueWithComment {
+    value: Value,
+    comment: Option<String>,
+}
+
+impl Display for ValueWithComment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.value)?;
+        if let Some(comment) = &self.comment {
+            write!(f, " // {}", comment)?;
+        }
+        Ok(())
+    }
+}
+
+impl From<String> for ValueWithComment {
+    fn from(value: String) -> Self {
+        ValueWithComment {
+            value: value.into(),
+            comment: None,
+        }
+    }
+}
+
+impl From<Value> for ValueWithComment {
+    fn from(value: Value) -> Self {
+        ValueWithComment {
+            value,
+            comment: None,
+        }
+    }
+}
+
+impl From<ValueWithComment> for Value {
+    fn from(value_with_comment: ValueWithComment) -> Self {
+        value_with_comment.value
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Payload(pub BTreeMap<String, Value>);
+pub struct Payload(pub BTreeMap<String, ValueWithComment>);
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 pub enum Claims {
-    Reordered(BTreeMap<String, Value>),
+    Reordered(BTreeMap<String, ValueWithComment>),
     OrderKept(Vec<PayloadItem>),
 }
 
@@ -52,6 +95,8 @@ pub enum TimeFormat {
     UTC,
     /// Displays your local timezone
     Local,
+    /// Displays time in relative to now
+    Relative,
     /// Displays a fixed timezone
     Fixed(i32),
 }
@@ -105,12 +150,22 @@ impl Payload {
         let timestamp_claims: Vec<String> = vec!["iat".into(), "nbf".into(), "exp".into()];
 
         for (key, value) in self.0.iter_mut() {
-            if timestamp_claims.contains(key) && value.is_number() {
-                *value = match value.as_i64() {
+            if timestamp_claims.contains(key) && value.value.is_number() {
+                let comment = match value.value.as_i64() {
                     Some(timestamp) => match offset {
                         TimeFormat::UTC => Utc.timestamp_opt(timestamp, 0).unwrap().to_rfc3339(),
                         TimeFormat::Local => {
                             Local.timestamp_opt(timestamp, 0).unwrap().to_rfc3339()
+                        }
+                        TimeFormat::Relative => {
+                            let now = Utc::now().timestamp();
+                            let diff = timestamp - now;
+                            let duration = std::time::Duration::from_secs(diff.unsigned_abs());
+                            if diff >= 0 {
+                                format!("in {}", format_duration(duration))
+                            } else {
+                                format!("{} ago", format_duration(duration))
+                            }
                         }
                         TimeFormat::Fixed(secs) => FixedOffset::east_opt(secs)
                             .unwrap()
@@ -119,7 +174,11 @@ impl Payload {
                             .to_rfc3339(),
                     }
                     .into(),
-                    None => value.clone(),
+                    None => None,
+                };
+                *value = ValueWithComment {
+                    value: value.value.clone(),
+                    comment,
                 }
             }
         }

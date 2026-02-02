@@ -90,7 +90,7 @@ pub fn encode_token(arguments: &EncodeArgs) -> JWTResult<String> {
         .map(|raw_json| match from_str(&raw_json) {
             Ok(Value::Object(json_value)) => json_value
                 .into_iter()
-                .map(|(json_key, json_val)| Some(PayloadItem(json_key, json_val)))
+                .map(|(json_key, json_val)| Some(PayloadItem(json_key, json_val.into())))
                 .collect(),
             _ => panic!("Invalid JSON provided!"),
         });
