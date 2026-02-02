@@ -147,10 +147,17 @@ impl Payload {
     }
 
     pub fn convert_timestamps(&mut self, offset: TimeFormat) {
+        fn looks_like_a_timestamp(value: &Value) -> bool {
+            if let Some(timestamp) = value.as_i64() {
+                return 1_000_000_000 <= timestamp && timestamp <= 2_500_000_000; // 01 Jan 3000
+            }
+            false
+        }
+
         let timestamp_claims: Vec<String> = vec!["iat".into(), "nbf".into(), "exp".into()];
 
         for (key, value) in self.0.iter_mut() {
-            if timestamp_claims.contains(key) && value.value.is_number() {
+            if timestamp_claims.contains(key) || looks_like_a_timestamp(&value.value) {
                 let comment = match value.value.as_i64() {
                     Some(timestamp) => match offset {
                         TimeFormat::UTC => Utc.timestamp_opt(timestamp, 0).unwrap().to_rfc3339(),
