@@ -197,11 +197,15 @@ fn to_string_pretty_with_comments(payload: &Payload) -> String {
         serde_json::to_writer(StringWriter(&mut res), &k).unwrap();
         res.push_str(": ");
         let value_s = serde_json::to_string_pretty(&v).unwrap();
-        for (i, line) in value_s.lines().enumerate() {
+        let lines: Vec<_> = value_s.lines().collect();
+        for (i, line) in lines.iter().enumerate() {
             if i != 0 {
                 res.push_str("  ");
             }
             res.push_str(line);
+            if i + 1 != lines.len() {
+                res.push('\n');
+            }
         }
         res.push(',');
         if let Some(comment) = &v.comment {
